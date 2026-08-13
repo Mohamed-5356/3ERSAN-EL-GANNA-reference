@@ -1,0 +1,320 @@
+// ============================================================================
+//  XOR BASIS (linear basis over GF(2)) — reference template
+//  Self-test:  g++ -std=c++17 -O2 -DXB_TEST xor_basis.cpp -o xb && ./xb
+// ============================================================================
+//
+//  SUBPROBLEM INDEX  (all O(B) unless noted)
+//   [1]  is x independent / insert                      insert(x)
+//   [2]  can x be written as XOR of a subset?           contains(x)
+//   [3]  canonical rep of coset x+span / MIN of x^S     reduce(x) == minXor(x)
+//   [4]  MAX of x ^ (subset xor)                        maxXor(x)   (x=0 -> max subset xor)
+//   [5]  min NONZERO subset xor                         minNonzero()      [needs rref()]
+//   [6]  k-th smallest DISTINCT xor value (0-indexed)   kth(k)            [needs rref()]
+//   [7]  how many distinct xor values are < x           countLess(x) O(B^2)[needs rref()]
+//   [8]  #distinct achievable values                    2^rk  = distinctCnt()
+//   [9]  #subsets whose xor == x                        subsetCnt(x, mod)
+//   [10] sum of all distinct achievable values          sumDistinct(mod)
+//   [11] does a nonempty subset xor to 0?               rk < cnt
+//   [12] merge two independent sets                     merge(other)
+//   [13] span(A) INTERSECT span(B)                      intersect(A,B)      (rare)
+//   [14] max-WEIGHT independent subset                  maxWeightIndep()    (matroid greedy)
+//   [15] max xor of a subset of a[l..r]                 PrefixBasis
+//   [16] min/max xor PATH u->v in a graph               cycleBasis recipe (bottom)
+//   [17] subset with square product / parity vectors    modeling recipe (bottom)
+//
+//  --------------------------- PICK B FIRST ----------------------------------
+//  B = bit count. Every value must be in [0, 2^B).  Too small B = silent WA.
+//     a[i] <= 1e9  -> B=30      a[i] < 2^20 -> B=20 (tight B matters for [15])
+//     a[i] <= 1e18 -> B=60      a[i] < 2^63 -> B=63 and swap ll -> unsigned long long
+//  Compiles fine under `#define int long long` (placed after the includes).
+// ---------------------------------------------------------------------------
+#include <bits/stdc++.h>
+using namespace std;
+using ll = long long;
+
+template<int B = 60>
+struct XorBasis {
+    array<ll, B> b{};   // b[i] != 0  =>  highest set bit of b[i] is exactly i ("pivot i")
+    int rk = 0;         // rank: #independent vectors. #distinct xors == 2^rk
+    int cnt = 0;        // #values ever fed to insert() — only needed for [9]
+    vector<ll> vec;     // RREF vectors, ascending pivot; VALID ONLY AFTER rref()
+
+    void clear() { b.fill(0); rk = cnt = 0; vec.clear(); }
+
+    // [1] true  = x independent, basis grew.
+    //     false = x already lies in the span (x collapsed to 0).
+    bool insert(ll x) {
+        ++cnt;
+        for (int i = B - 1; i >= 0; --i) {
+            if (!(x >> i & 1)) continue;
+            if (!b[i]) { b[i] = x; ++rk; return true; }
+            x ^= b[i];
+        }
+        return false;
+    }
+
+    // [3] Kill every pivot bit of x. Result is the UNIQUE minimum of {x ^ s : s in span}:
+    //     any other coset member differs from it first at some pivot bit, where it has 1.
+    ll reduce(ll x) const {
+        for (int i = B - 1; i >= 0; --i)
+            if ((x >> i & 1) && b[i]) x ^= b[i];
+        return x;
+    }
+    ll minXor(ll x = 0) const { return reduce(x); }   // min of x ^ subset
+    // [2]
+    bool contains(ll x) const { return reduce(x) == 0; }
+
+    // [4] Greedy from the top: b[i] touches no bit above i, so taking it whenever it
+    //     turns bit i on is never regrettable.
+    ll maxXor(ll x = 0) const {
+        for (int i = B - 1; i >= 0; --i)
+            if (b[i] && !(x >> i & 1)) x ^= b[i];
+        return x;
+    }
+
+    // Reduced row echelon form: pivot i appears in b[i] and nowhere else.
+    // Needed by [5][6][7]. Cheap: O(B^2) bit ops. Safe to insert() afterwards,
+    // but vec/rref-ness goes stale — call rref() again.
+    void rref() {
+        for (int i = 0; i < B; ++i) {
+            if (!b[i]) continue;                       // b[i] already free of lower pivots
+            for (int j = i + 1; j < B; ++j)
+                if (b[j] >> i & 1) b[j] ^= b[i];
+        }
+        vec.clear();
+        for (int i = 0; i < B; ++i) if (b[i]) vec.push_back(b[i]);
+        // vec is strictly increasing (pivot order == value order in RREF)
+    }
+
+    // [5] smallest nonzero value in the span. -1 if span == {0}.
+    //     NOTE: if rk < cnt, some NONEMPTY subset xors to 0, so the answer to
+    //     "min xor over nonempty subsets" is 0, not this.
+    ll minNonzero() const { return vec.empty() ? -1 : vec[0]; }
+
+    // [6] k-th smallest distinct value, 0-indexed; kth(0) == 0. Needs 0 <= k < 2^rk.
+    //     In RREF the pivot bits of the result ARE the coefficients, so k -> value
+    //     is order-preserving: bit i of k <-> vec[i].
+    ll kth(ll k) const {
+        ll r = 0;
+        for (int i = 0; i < (int)vec.size(); ++i) if (k >> i & 1) r ^= vec[i];
+        return r;
+    }
+
+    // [7] #distinct achievable values strictly less than x.
+    //     kth() is monotone, so the valid k form a prefix [0..K]; build K bit by bit.
+    //     O(B^2). If this is inside a 1e5+ query loop and TLEs, replace with a single
+    //     descending-pivot walk over x (O(B)).
+    ll countLess(ll x) const {
+        if (x <= 0) return 0;                 // kth(0) == 0
+        ll k = 0;
+        for (int i = (int)vec.size() - 1; i >= 0; --i) {
+            ll t = k | (1LL << i);
+            if (kth(t) < x) k = t;
+        }
+        return k + 1;
+    }
+
+    // [8] returns -1 if 2^rk overflows; use a mod in that case.
+    ll distinctCnt() const { return rk < 63 ? (1LL << rk) : -1; }
+
+    // [9] #subsets of the inserted multiset with xor == x  ==  2^(cnt-rk) if
+    //     representable, else 0. (Fix any representation; the 2^(cnt-rk) elements of
+    //     the dependency space toggle freely.) cnt-rk is huge -> always mod.
+    ll subsetCnt(ll x, ll mod) const {
+        if (!contains(x)) return 0;
+        ll r = 1 % mod, e = cnt - rk, base = 2 % mod;
+        while (e) { if (e & 1) r = r * base % mod; base = base * base % mod; e >>= 1; }
+        return r;
+    }
+
+    // [10] Bit p is set in exactly half of the 2^rk distinct values iff some basis
+    //      vector has bit p (else in none). So sum = (OR of basis) * 2^(rk-1).
+    ll sumDistinct(ll mod) const {
+        if (!rk) return 0;
+        ll o = 0;
+        for (int i = 0; i < B; ++i) o |= b[i];
+        ll r = o % mod, e = rk - 1, base = 2 % mod;
+        while (e) { if (e & 1) r = r * base % mod; base = base * base % mod; e >>= 1; }
+        return r % mod;
+    }
+
+    // [12] cnt adds up, so [9] stays correct for the union multiset.
+    void merge(const XorBasis& o) {
+        int keep = cnt;
+        for (int i = 0; i < B; ++i) if (o.b[i]) insert(o.b[i]);
+        cnt = keep + o.cnt;
+        vec.clear();
+    }
+
+    // [13] span(X) INTERSECT span(Y)  — Zassenhaus. Row-reduce the block matrix
+    //      [[X, X], [Y, 0]] on the first block only; a row whose first block dies
+    //      encodes  sum(a_i x_i) == sum(b_j y_j), and its second block IS that common
+    //      vector. Collected witnesses span the intersection.
+    friend XorBasis intersect(const XorBasis& X, const XorBasis& Y) {
+        array<ll, B> u{}, w{};
+        XorBasis res;
+        auto add = [&](ll val, ll wit) {
+            for (int i = B - 1; i >= 0; --i) {
+                if (!(val >> i & 1)) continue;
+                if (!u[i]) { u[i] = val; w[i] = wit; return; }
+                val ^= u[i]; wit ^= w[i];
+            }
+            if (wit) res.insert(wit);
+        };
+        for (int i = 0; i < B; ++i) if (X.b[i]) add(X.b[i], X.b[i]);
+        for (int i = 0; i < B; ++i) if (Y.b[i]) add(Y.b[i], 0);
+        return res;
+    }
+};
+
+// [14] Max-weight subset that is XOR-independent (linear matroid => plain greedy).
+//      Also the shape of "keep k items, maximize sum, all xors distinct" problems.
+//      Returns total weight; `take` flags the chosen indices.
+template<int B = 60>
+ll maxWeightIndep(vector<pair<ll, ll>> vw /*{value,weight}*/, vector<char>* take = nullptr) {
+    int n = vw.size();
+    vector<int> id(n); iota(id.begin(), id.end(), 0);
+    sort(id.begin(), id.end(), [&](int a, int b) { return vw[a].second > vw[b].second; });
+    XorBasis<B> xb; ll tot = 0;
+    if (take) take->assign(n, 0);
+    for (int i : id) if (xb.insert(vw[i].first)) { tot += vw[i].second; if (take) (*take)[i] = 1; }
+    return tot;
+}
+
+// ---------------------------------------------------------------------------
+// [15] PREFIX BASIS — max xor of a subset of a[l..r], O(B) per query, no updates.
+//      Trick: for prefix r keep, at each pivot, the vector with the LARGEST index.
+//      Then a query [l,r] just ignores pivots whose stored index < l — and that
+//      restricted set is still a basis of a[l..r], because the greedy always kept
+//      the freshest representative.
+//      MEMORY = n * B * sizeof(T+int). n=5e5, B=20, T=unsigned -> ~80MB. Keep B tight
+//      and T 32-bit, or roll the array offline (sort queries by r).
+// ---------------------------------------------------------------------------
+template<int B = 20, class T = unsigned>
+struct PrefixBasis {
+    vector<array<T, B>> val;
+    vector<array<int, B>> pos;
+    void build(const vector<T>& a) {
+        int n = a.size();
+        val.assign(n + 1, {}); pos.assign(n + 1, {});
+        pos[0].fill(-1);
+        for (int t = 0; t < n; ++t) {
+            val[t + 1] = val[t]; pos[t + 1] = pos[t];
+            T x = a[t]; int p = t;
+            for (int i = B - 1; i >= 0 && x; --i) {
+                if (!(x >> i & 1)) continue;
+                if (pos[t + 1][i] < 0) { val[t + 1][i] = x; pos[t + 1][i] = p; x = 0; break; }
+                if (pos[t + 1][i] < p) { swap(x, val[t + 1][i]); swap(p, pos[t + 1][i]); }
+                x ^= val[t + 1][i];
+            }
+        }
+    }
+    T maxXor(int l, int r) const {          // 0-indexed, inclusive
+        T res = 0;
+        for (int i = B - 1; i >= 0; --i)
+            if (pos[r + 1][i] >= l && !(res >> i & 1)) res ^= val[r + 1][i];
+        return res;
+    }
+    array<T, B> getBasis(int l, int r) const {   // slot i nonzero <=> present, leading bit == i
+        array<T, B> b{};
+        for (int i = B - 1; i >= 0; --i)
+            if (pos[r + 1][i] >= l) b[i] = val[r + 1][i];
+        return b;
+    }
+};
+
+// ---------------------------------------------------------------------------
+//  RECIPES (no code needed, just the reduction)
+// ---------------------------------------------------------------------------
+// [16] MIN/MAX XOR PATH u->v, undirected, xor-weighted, walks allowed:
+//        DFS per component, d[v] = xor(root..v).
+//        For every NON-TREE edge (u,v,w): xb.insert(d[u]^d[v]^w)   // a cycle
+//        query(u,v) = xb.maxXor(d[u]^d[v])  /  xb.minXor(d[u]^d[v])
+//      Why: any u->v walk = base path ^ some combination of cycles, and every
+//      combination is realizable (re-walk the cycle). Tree path xor is d[u]^d[v].
+//
+// [17] PARITY-VECTOR MODELING — "subset whose product is a perfect square":
+//        each a[i] -> bitmask of primes with ODD exponent; square <=> xor of masks 0.
+//        #nonempty valid subsets = 2^(n-rk) - 1.   Same shape: any "every X appears an
+//        even number of times" constraint becomes a GF(2) vector.
+//
+// [18] NOT SUPPORTED: deletion. Workarounds: PrefixBasis [15] for suffix/range,
+//      offline divide-and-conquer on time, segment tree of bases (merge is O(B^2)),
+//      or the "keep newest index" trick generalized to a sliding window.
+//
+// [19] B > 64: swap ll for bitset<B> / array<uint64_t,K>. Same algorithm; insert
+//      becomes O(B * B/64). Gaussian elimination on a matrix is the same object.
+//
+//  TRIGGER RULES
+//   * "xor of a subset" / "choose any subset, xor them" -> basis. Always.
+//   * "xor compared with a sum" -> NOT basis; rewrite as carry/disjointness first.
+//   * "max xor of a subarray" -> NOT basis; that's prefix-xor + trie.
+//   * "xor of a path" -> d[u]^d[v]; if walks/cycles allowed, cycle basis [16].
+//   * "count subsets with property P over xor" -> 2^(n-rk) per achievable value [9].
+//   * "even count of every prime/letter/type" -> parity vectors [17].
+// ---------------------------------------------------------------------------
+
+#ifdef XB_TEST
+// Brute-force cross-check of every claim above on small random inputs.
+int main() {
+    mt19937 rng(20260730);
+    const int Bt = 5, MOD = 1000000007;
+    for (int it = 0; it < 3000; ++it) {
+        int n = rng() % 7 + 1;
+        vector<ll> a(n); for (auto& x : a) x = rng() % 32;
+        XorBasis<Bt> xb; for (ll x : a) xb.insert(x);
+        map<ll, ll> mult;
+        for (int m = 0; m < (1 << n); ++m) { ll v = 0; for (int i = 0; i < n; ++i) if (m >> i & 1) v ^= a[i]; mult[v]++; }
+        set<ll> S; for (auto& kv : mult) S.insert(kv.first);
+        assert((ll)S.size() == xb.distinctCnt());
+        assert((xb.rk < xb.cnt) == ((int)S.size() < (1 << n)));
+        xb.rref();
+        { int i = 0; for (ll v : S) assert(xb.kth(i++) == v); }
+        ll mn = -1; for (ll v : S) if (v) { mn = v; break; }
+        assert(xb.minNonzero() == mn);
+        for (ll x = 0; x < 40; ++x) {
+            assert(xb.contains(x) == (bool)S.count(x));
+            ll mx = -1, mi = LLONG_MAX, lt = 0;
+            for (ll v : S) { mx = max(mx, x ^ v); mi = min(mi, x ^ v); lt += (v < x); }
+            assert(xb.maxXor(x) == mx);
+            assert(xb.minXor(x) == mi);
+            assert(xb.countLess(x) == lt);
+            assert(xb.subsetCnt(x, MOD) == (mult.count(x) ? mult[x] % MOD : 0));
+        }
+        ll s = 0; for (ll v : S) s += v;
+        assert(xb.sumDistinct(MOD) == s % MOD);
+
+        // [13] intersection
+        int m1 = rng() % 4 + 1, m2 = rng() % 4 + 1;
+        XorBasis<Bt> P, Q; vector<ll> pa(m1), qa(m2);
+        for (auto& x : pa) { x = rng() % 32; P.insert(x); }
+        for (auto& x : qa) { x = rng() % 32; Q.insert(x); }
+        auto span = [](vector<ll>& v) { set<ll> r; for (int m = 0; m < (1 << v.size()); ++m) { ll t = 0; for (size_t i = 0; i < v.size(); ++i) if (m >> i & 1) t ^= v[i]; r.insert(t); } return r; };
+        set<ll> sp = span(pa), sq = span(qa), si;
+        for (ll v : sp) if (sq.count(v)) si.insert(v);
+        XorBasis<Bt> R = intersect(P, Q);
+        assert(R.distinctCnt() == (ll)si.size());
+        for (ll v : si) assert(R.contains(v));
+
+        // [15] prefix basis
+        vector<unsigned> ua(n); for (int i = 0; i < n; ++i) ua[i] = (unsigned)a[i];
+        PrefixBasis<Bt, unsigned> pb; pb.build(ua);
+        for (int l = 0; l < n; ++l) for (int r = l; r < n; ++r) {
+            unsigned best = 0;
+            for (int m = 0; m < (1 << (r - l + 1)); ++m) { unsigned t = 0; for (int i = l; i <= r; ++i) if (m >> (i - l) & 1) t ^= ua[i]; best = max(best, t); }
+            assert(pb.maxXor(l, r) == best);
+        }
+
+        // [14] max-weight independent subset
+        vector<pair<ll, ll>> vw(n); for (int i = 0; i < n; ++i) vw[i] = { a[i], (ll)(rng() % 100) };
+        ll got = maxWeightIndep<Bt>(vw), want = 0;
+        for (int m = 0; m < (1 << n); ++m) {
+            XorBasis<Bt> t; bool ok = true; ll w = 0;
+            for (int i = 0; i < n && ok; ++i) if (m >> i & 1) { ok = t.insert(vw[i].first); w += vw[i].second; }
+            if (ok) want = max(want, w);
+        }
+        assert(got == want);
+    }
+    puts("all subproblems verified against brute force");
+}
+#endif

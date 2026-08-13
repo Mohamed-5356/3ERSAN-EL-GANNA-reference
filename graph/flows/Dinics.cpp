@@ -1,0 +1,155 @@
+#include <bits/stdc++.h>
+using namespace std;
+typedef long long ll;
+#define el '\n'
+#define fio ios_base::sync_with_stdio(0); cin.tie(0); cout.tie(0);
+struct FlowEdge {
+    int v, u;
+    long long cap, flow = 0;
+    FlowEdge(int v, int u, long long cap) : v(v), u(u), cap(cap) {}
+};
+pair<int, int> dxdy[] = {{1,0}, {0,1}, {-1,0},{0,-1}};
+vector<int> in, out;
+struct Dinic {
+    const long long flow_inf = 1e18;
+    vector<FlowEdge> edges;
+    vector<vector<int>> adj;
+    int n, m = 0;
+    int s, t;
+    vector<int> level, ptr;
+    queue<int> q;
+
+    Dinic(int n, int s, int t) : n(n), s(s), t(t) {
+        adj.resize(n);
+        level.resize(n);
+        ptr.resize(n);
+    }
+
+    void add_edge(int v, int u, long long cap) {
+        edges.emplace_back(v, u, cap);
+        edges.emplace_back(u, v, 0);
+        adj[v].push_back(m);
+        adj[u].push_back(m + 1);
+        m += 2;
+    }
+    bool bfs() {
+        while (!q.empty()) {
+            int v = q.front();
+            q.pop();
+            for (int id : adj[v]) {
+                if (edges[id].cap == edges[id].flow)
+                    continue;
+                if (level[edges[id].u] != -1)
+                    continue;
+                level[edges[id].u] = level[v] + 1;
+                q.push(edges[id].u);
+            }
+        }
+        return level[t] != -1;
+    }
+
+    long long dfs(int v, long long pushed) {
+        if (pushed == 0)
+            return 0;
+        if (v == t)
+            return pushed;
+        for (int& cid = ptr[v]; cid < (int)adj[v].size(); cid++) {
+            int id = adj[v][cid];
+            int u = edges[id].u;
+            if (level[v] + 1 != level[u])
+                continue;
+            long long tr = dfs(u, min(pushed, edges[id].cap - edges[id].flow));
+            if (tr == 0)
+                continue;
+            edges[id].flow += tr;
+            edges[id ^ 1].flow -= tr;
+            return tr;
+        }
+        return 0;
+    }
+
+    long long flow() {
+        long long f = 0;
+        while (true) {
+            fill(level.begin(), level.end(), -1);
+            level[s] = 0;
+            q.push(s);
+            if (!bfs())
+                break;
+            fill(ptr.begin(), ptr.end(), 0);
+            while (long long pushed = dfs(s, flow_inf)) {
+                f += pushed;
+            }
+        }
+        return f;
+    }
+ vector<pair<int, int>> mincut() {
+        vector<bool> vis(n);
+        queue<int> q; q.push(s);
+        vis[s] = 1;
+        vector<pair<int, int>>ret;
+        while (q.size()) {
+            int u = q.front();
+            q.pop();
+            for (int j : adj[u]) {
+                auto &[u,v,cap,flow] = edges[j];
+                if (flow<cap && !vis[v]) {
+                    q.push(v);
+                    vis[v] = 1;
+                }
+            }
+        }
+        for (int u = 0; u < n; u++) {
+            if (!vis[u]) continue;
+            for (int j : adj[u]) {
+                if (j&1) continue;
+                auto &[uu,v,cap,flow] = edges[j];
+                if (!vis[v]) ret.emplace_back(u, v);
+            }
+        }
+        return ret;
+    }
+};
+void solve() {
+    int n, m, b;
+    cin >> n >> m >> b;
+    in.clear(), out.clear();
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < m; j++)
+            in.push_back(i*m+j);
+    for (auto &i : in)
+        out.push_back(i+(int)in.size());
+    int s = out.back()+1;
+    int t = out.back()+2;
+    Dinic mx(t+5, s, t);
+    for (int i = 0; i < in.size(); i++)
+        mx.add_edge(in[i], out[i], 1);
+    vector<pair<int, int>> bnk(b);
+    for (int i = 0; i < b; i++)
+        cin >>  bnk[i].first >> bnk[i].second, bnk[i].first--, bnk[i].second--;
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j <  m; j++) {
+            for (auto &[x,y] :  dxdy) {
+                int I = x + i, J = y + j;
+                if (0 <= I && I < n && 0 <= J && J < m)
+                    mx.add_edge(out[i*m+j], in[I*m+J], mx.flow_inf);
+            }
+        }
+    }
+    for (int i = 0; i < n; i++)
+        mx.add_edge(out[i*m], t,mx.flow_inf);
+    for (int i = 0; i < n; i++)
+        mx.add_edge(out[i*m+m-1], t,mx.flow_inf);
+    for (int j = 0; j < m; j++)
+        mx.add_edge(out[j], t,mx.flow_inf);
+    for (int j = 0; j < m; j++)
+        mx.add_edge(out[(n-1)*m+j], t,mx.flow_inf);
+
+    for (auto &[f,s]:bnk)
+        mx.add_edge(out.back()+1, in[f*m+s], mx.flow_inf);
+    cout << (mx.flow() == b? "possible" : "not possible") << el;
+}
+
+signed main() { fio int t = 1; cin >> t; while (t--) solve(); return 0; }
+
+

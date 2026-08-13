@@ -1,0 +1,65 @@
+const int Sq = 550, N = 1e5 + 10;
+ll a[N];
+int p[N];
+pair<int, int> buc[N / Sq + 10];
+int n, q, dp[N];
+void build(int idx, int n) {
+    auto &[mx, lst] = buc[idx];
+    mx = -1, lst = 0;
+    for (int i = idx * Sq; i < min(n, (idx + 1) * Sq); i++) {
+        if (mx < dp[i])
+            mx = dp[i], lst = i;
+    }
+}
+pair<int, int> query(int l, int r) {
+    int mx = -1, lst{};
+    for (int i = l; i <= r;) {
+        if (i % Sq == 0 and i + Sq - 1 <= r) {
+            if (mx < buc[i/Sq].first)
+                mx = buc[i/Sq].first, lst = buc[i/Sq].second;
+            i += Sq;
+        } else {
+            if (mx <= dp[i])
+                mx = dp[i], lst = i;
+            i++;
+        }
+    }if (!mx) lst = 0;
+    return {mx, lst};
+}
+void solve() {
+    int d;
+    cin >> n >> d;
+    vector<ll> cmp;
+    map<ll, int> idxy;
+    for (int i = 0; i < n; i++)
+        cin >> a[i], cmp.push_back(a[i]);
+    cmp.push_back(-1e10);
+    sort(cmp.begin(), cmp.end());
+    cmp = vector(cmp.begin(), unique(cmp.begin(), cmp.end()));
+    for (int i = 0; i < n; i++)
+        a[i] = lower_bound(cmp.begin(), cmp.end(), a[i]) - cmp.begin();
+    for (int i = 0; i < n; i++) {
+        int l = upper_bound(cmp.begin(), cmp.end(), cmp[a[i]] - d) - cmp.begin()-1;
+        int r = lower_bound(cmp.begin(), cmp.end(), cmp[a[i]] + d) - cmp.begin();
+        auto [mx, par] = max(query(0, l),query(r, 1e5));
+        dp[a[i]] =mx+1;
+        p[i] =  (par? idxy[cmp[par]] : -1);// lower_bound(cmp.begin(), cmp.end(), par)-cmp.begin();
+        build(a[i]/Sq, N);
+        idxy[cmp[a[i]]] = i;
+    }
+    int mx = 0, idx{};
+    for (ll i = 0; i < n; i++) {
+        mx = max(dp[a[i]], mx);
+        if (mx == dp[a[i]])
+            idx = i;
+    }
+    mx = idx;
+    vector<int>out;
+    while (mx>-1) {
+        out.push_back(mx);
+        mx = p[mx];
+    }
+    cout << out.size() << el;
+    reverse(out.begin(), out.end());
+    for (auto &i : out ) cout << i+1 << ' ';
+}

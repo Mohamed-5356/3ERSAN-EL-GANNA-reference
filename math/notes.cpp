@@ -1,0 +1,1 @@
+//All primes greater than 3 can be written in the form 6k + or - 1

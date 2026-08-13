@@ -1,0 +1,48 @@
+const int N = 200'123;
+ll a[N];
+
+struct SegmentTree {
+    struct Node { ll f; };
+    struct Lazy {
+        ll add;
+        bool none() const { return !add; }
+    };
+    Node tree[N << 2];
+    Lazy lazy[N << 2];
+
+    Node single(ll x) { return {x}; }
+    Node merge(const Node &x, const Node &y) { return {max(x.f, y.f)}; }
+    void apply(Node &x, const Lazy &z, int len) { x.f += z.add*len; }
+    void compose(Lazy &x, const Lazy &z) { x.add += z.add; }
+
+    void build(int u, int st, int en) {
+        lazy[u] = {};
+        if (st == en) return void(tree[u] = single(a[st]));
+        int mid = st + en >> 1;
+        build(u << 1, st, mid);
+        build(u << 1 | 1, mid + 1, en);
+        tree[u] = merge(tree[u << 1], tree[u << 1 | 1]);
+    }
+    void prop(int u, int st, int mid, int en) {
+        if (lazy[u].none()) return;
+        apply(tree[u << 1], lazy[u], mid - st + 1), compose(lazy[u << 1], lazy[u]);
+        apply(tree[u << 1 | 1], lazy[u], en - mid), compose(lazy[u << 1 | 1], lazy[u]);
+        lazy[u] = {};
+    }
+    void update(int u, int st, int en, int i, int j, const Lazy &v) {
+        if (i <= st && en <= j) return apply(tree[u], v, en - st + 1), compose(lazy[u], v);
+        int mid = st + en >> 1;
+        prop(u, st, mid, en);
+        if (i <= mid) update(u << 1, st, mid, i, j, v);
+        if (j > mid) update(u << 1 | 1, mid + 1, en, i, j, v);
+        tree[u] = merge(tree[u << 1], tree[u << 1 | 1]);
+    }
+    Node query(int u, int st, int en, int i, int j) {
+        if (i <= st && en <= j) return tree[u];
+        int mid = st + en >> 1;
+        prop(u, st, mid, en);
+        if (j <= mid) return query(u << 1, st, mid, i, j);
+        if (i > mid) return query(u << 1 | 1, mid + 1, en, i, j);
+        return merge(query(u << 1, st, mid, i, j), query(u << 1 | 1, mid + 1, en, i, j));
+    }
+} t;

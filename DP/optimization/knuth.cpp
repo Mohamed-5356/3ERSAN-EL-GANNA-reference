@@ -1,0 +1,19 @@
+const int N = 2005;
+long long dp[N][N], pre[N];
+int opt[N][N];
+
+auto C = [&](int i, int j) { return pre[j + 1] - pre[i]; };
+
+void knuth(int n) {
+    for (int i = 0; i < n; i++) { dp[i][i] = 0; opt[i][i] = i; }
+    for (int len = 2; len <= n; len++)
+        for (int i = 0, j = len - 1; j < n; i++, j++) {
+            dp[i][j] = LLONG_MAX;
+            int lo = max(opt[i][j - 1], i);
+            int hi = min(opt[i + 1][j], j - 1);
+            for (int k = lo; k <= hi; k++) {
+                long long cur = dp[i][k] + dp[k + 1][j] + C(i, j);
+                if (cur < dp[i][j]) { dp[i][j] = cur; opt[i][j] = k; }
+            }
+        }
+}
