@@ -1,0 +1,111 @@
+#include <bits/stdc++.h>
+#define el '\n'
+#define ll long long
+#define ld long double
+#define ToshToshTroshToshTosh ios_base::sync_with_stdio(0); cin.tie(0); cout.tie(0);
+using namespace std;
+const int mod = 1e9+7;
+struct Trie {
+  static const int ALPHA = 10;
+  struct Node {
+    int child[ALPHA] = {};
+    int f = 0;
+  };
+  vector<Node> trie;
+  Trie() { trie.emplace_back(); }
+  void insert(string& s) {
+    int node = 0;
+    for(auto& i : s) {
+      int chIdx = i-'0';
+      if(!trie[node].child[chIdx]) {
+        trie[node].child[chIdx] = trie.size();
+        trie.emplace_back();
+      }
+      node = trie[node].child[chIdx];
+      trie[node].f++;
+      }
+    }
+
+  void erase(string& s) {
+    int node = 0;
+    for(auto& i : s) {
+      int chIdx = i-'0';
+      node = trie[node].child[chIdx];
+      trie[node].f--;
+    }
+  }
+  string querymn(string& s) {
+    int node = 0;
+    string rt;
+    for(auto& i : s) {
+      int chIdx = i-'0';
+      bool vld = 0;
+      for(int sum = 0; sum < 10; sum++){
+        int x = sum - chIdx;
+        x += 20, x %= 10;
+        if(!trie[node].child[x]) continue;
+        chIdx = x;
+        vld = 1;
+        rt.push_back('0'+sum);
+        break;
+      }
+      if(!vld) 
+        return "99999999999999999999";
+      node = trie[node].child[chIdx];
+      trie[node].f++; // ??
+    }
+    return rt;
+  }
+ string querymx(string& s) {
+    int node = 0;
+    string rt;
+    for(auto& i : s) {
+      int chIdx = i-'0';
+      bool vld = 0;
+      for(int sum = 9; sum >= 0; sum--){
+        int x = sum - chIdx;
+        x += 20, x %= 10;
+        if(!trie[node].child[x]) continue;
+        chIdx = x;
+        vld = 1;
+        rt.push_back('0'+sum);
+        break;
+      }
+      if(!vld) 
+        return "00000000000000000000";
+      node = trie[node].child[chIdx];
+      trie[node].f++; // ??
+    }
+    return rt;
+  }
+};
+
+int main() {
+  ToshToshTroshToshTosh
+  int n;
+  cin >> n;
+  vector<string> a(n);
+  Trie t;
+  string outmn = "99999999999999999999";
+  string outmx = "00000000000000000000";
+  for (auto &s : a){
+    cin >> s;
+    reverse(s.begin(), s.end());
+    while(s.size() < 20) s.push_back('0');
+    reverse(s.begin(), s.end());
+
+    outmn = min(t.querymn(s), outmn);
+    outmx = max(t.querymx(s), outmx);
+    //cout << s << el;
+    t.insert(s);
+  }
+  reverse(outmn.begin(), outmn.end());
+  while(outmn.size() > 1 && outmn.back() == '0') outmn.pop_back();
+  reverse(outmn.begin(), outmn.end());
+  reverse(outmx.begin(), outmx.end());
+  while(outmx.size() > 1 && outmx.back() == '0') outmx.pop_back();
+  reverse(outmx.begin(), outmx.end());
+
+  cout << outmn << ' ' << outmx << el;
+  return 0;
+}

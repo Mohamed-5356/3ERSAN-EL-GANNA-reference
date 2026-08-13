@@ -1,0 +1,30 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+int a[N];                        // 1-indexed input, a[1..n]
+
+struct MST {                     // Fenwick merge-sort tree, static
+    int n;
+    vector<int> flat, off;       // node i's sorted block = flat[off[i], off[i+1])
+    void build(int _n){
+        n = _n;
+        vector<int> sz(n + 1, 0);
+        for(int p = 1; p <= n; ++p)
+            for(int i = p; i <= n; i += i & -i) ++sz[i];
+        off.assign(n + 2, 0);
+        for(int i = 1; i <= n; ++i) off[i + 1] = off[i] + sz[i];
+        flat.resize(off[n + 1]);
+        vector<int> cur(off.begin(), off.begin() + n + 1);   // write cursors
+        for(int p = 1; p <= n; ++p)
+            for(int i = p; i <= n; i += i & -i) flat[cur[i]++] = a[p];
+        for(int i = 1; i <= n; ++i)
+            sort(flat.begin() + off[i], flat.begin() + off[i + 1]);
+    }
+    int pref(int r, int k){                                  // # > k in [1, r]
+        int res = 0; const int* F = flat.data();
+        for(int i = r; i > 0; i -= i & -i)
+            res += off[i + 1] - int(upper_bound(F + off[i], F + off[i + 1], k) - F);
+        return res;
+    }
+    int query(int l, int r, int k){ return pref(r, k) - pref(l - 1, k); }
+} t;

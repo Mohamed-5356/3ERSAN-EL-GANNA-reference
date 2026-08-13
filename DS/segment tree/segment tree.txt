@@ -1,0 +1,93 @@
+#include <bits/stdc++.h>
+using namespace std;
+typedef long long ll;
+typedef long double ld;
+#define el '\n'
+#define fio ios_base::sync_with_stdio(0); cin.tie(0); cout.tie(0);
+//const int N = 200'123;
+int a[N];
+struct Node {
+    int prfincrease{};
+    int sufincrease{};
+    int first{}, sz{}, last{};
+    ll ans{};
+};
+Node create(int n) {
+    Node r{};
+    r.first = r.last = n;
+    r.prfincrease = r.sufincrease  = r.ans = r.sz = 1;
+    return r;
+}
+Node add(Node a, Node b) {
+    Node r{};
+    if (a.first < 0) return b;
+    if (b.first < 0) return a;
+    r.prfincrease = a.prfincrease;
+    r.sufincrease = b.sufincrease;
+    if (a.last <= b.first) {
+        if (a.sufincrease == a.sz)
+            r.prfincrease = a.sz + b.prfincrease;
+        if (b.prfincrease == b.sz)
+            r.sufincrease = b.sz + a.sufincrease;
+    }
+    r.first = a.first, r.sz = a.sz + b.sz, r.last = b.last,
+    r.ans = a.ans + b.ans + (a.last <= b.first? a.sufincrease * 1ll * b.prfincrease : 0ll);
+    return r;
+}
+struct ST{
+    Node t[N << 2];
+    ST(){};//memset(t, 0, sizeof(t));}
+    void build(int n, int b, int e){
+        if(b == e) return void(t[n] = create(a[b]));//////////////////////
+        int m = (b + e) >> 1, l = n << 1, r = l | 1;
+        build(l, b, m);
+        build(r, m + 1, e);
+        t[n] = add(t[l], t[r]);
+    }
+    void upd(int n, int b, int e, int i){
+        if(b > i || e < i) return;
+        if(b == e) return void(t[n] = create(a[i]));
+        int m = (b + e) >> 1, l = n << 1, r = l|1;
+        upd(l, b, m, i);
+        upd(r, m + 1, e, i);
+        t[n] = add(t[l], t[r]);
+    }
+    Node query(int n, int b, int e, int i, int j){
+        if(e < i || b > j) return create(-1);
+        if(i <= b && e <= j) return t[n];
+        int m = (b + e) >> 1, l = n << 1, r = l|1;
+        Node L = query(l, b, m, i, j);
+        Node R = query(r, m + 1, e, i, j);
+        return add(L, R);
+    }
+}t;
+
+void solve() {
+    int n, q;
+    cin >> n >> q;
+    for (int i = 1; i <= n; i++)
+        cin >> a[i];
+    t.build(1, 1, n);
+    for (int op, x, y, l, r; q--;) {
+        cin >> op;
+        if (op&1) {
+            cin >>  x >> y;
+            a[x] = y;
+            t.upd(1,1,n, x);
+        }
+        else {
+            cin >> l >> r;
+            cout << t.query(1,1,n, l, r).ans << el;
+        }
+    }
+}
+
+signed main() { fio int t = 1; /*cin >> t;*/ while (t--) solve(); return 0; }
+
+
+
+
+
+
+
+

@@ -1,0 +1,126 @@
+#include <bits/stdc++.h>
+using namespace std;
+typedef long long ll;
+const int N = 2e5 + 9, INF = 1e9;
+#define el '\n'
+// [0, n-1]
+struct SegTree {
+    int t[4*N], lz[4*N];
+    // push lazy from v down to its two children
+    void push(int v) {
+        if (!lz[v]) return;
+        for (int c : {v<<1, v<<1|1}) { t[c] += lz[v]; lz[c] += lz[v]; }
+        lz[v] = 0;
+    }
+    void build(int v, int l, int r, int* a) {
+        lz[v] = 0;
+        if (l == r) { t[v] = a[l]; return; }
+        int m = (l+r)>>1;
+        build(v<<1, l, m, a); build(v<<1|1, m+1, r, a);
+        t[v] = max(t[v<<1], t[v<<1|1]);
+    }
+    void upd(int v, int l, int r, int ql, int qr, int x) {
+        if (qr < l || r < ql) return;
+        if (ql <= l && r <= qr) { t[v] += x; lz[v] += x; return; }
+        push(v); int m = (l+r)>>1;
+        upd(v<<1, l, m, ql, qr, x); upd(v<<1|1, m+1, r, ql, qr, x);
+        t[v] = max(t[v<<1], t[v<<1|1]);
+    }
+    int query(int v, int l, int r, int ql, int qr) {
+        if (qr < l || r < ql) return -INF;
+        if (ql <= l && r <= qr) return t[v];
+        push(v); int m = (l+r)>>1;
+        return max(query(v<<1, l, m, ql, qr), query(v<<1|1, m+1, r, ql, qr));
+    }
+} seg;
+
+// ── HLD setup ─────────────────────────────────────────────────────────────
+int n, dat[N];
+int node_val[N];                         // initial node weights
+vector<int> g[N];
+int par[N], dep[N], sz[N], hd[N], st[N], en[N], T;
+
+void dfs(int u, int p = 0) {
+    par[u] = p; dep[u] = dep[p]+1; sz[u] = 1;
+    if (p) g[u].erase(find(g[u].begin(), g[u].end(), p));
+    for (int& v : g[u]) {
+        dfs(v, u); sz[u] += sz[v];
+        if (sz[v] > sz[g[u][0]]) swap(v, g[u][0]);
+    }
+}
+void dfs_hld(int u) {
+    st[u] = T++;
+    for (int v : g[u]) {
+        hd[v] = (v == g[u][0] ? hd[u] : v);
+        dfs_hld(v);
+    }
+    en[u] = T-1;
+}
+
+void path_upd(int u, int v, int x) {
+    for (; hd[u] != hd[v]; u = par[hd[u]]) {
+        if (dep[hd[u]] < dep[hd[v]]) swap(u, v);
+        seg.upd(1, 0, n-1, st[hd[u]], st[u], x);
+    }
+    if (dep[u] > dep[v]) swap(u, v);
+    seg.upd(1, 0, n-1, st[u], st[v], x);       // LCA INCLUDED
+}
+int path_query(int u, int v) {
+    int res = -INF;
+    for (; hd[u] != hd[v]; u = par[hd[u]]) {
+        if (dep[hd[u]] < dep[hd[v]]) swap(u, v);
+        res = max(res, seg.query(1, 0, n-1, st[hd[u]], st[u]));
+    }
+    if (dep[u] > dep[v]) swap(u, v);
+    return max(res, seg.query(1, 0, n-1, st[u], st[v]));   // LCA INCLUDED
+}
+/*Node path_query(int u, int v) {
+    Node res = {-INF,0};
+    Node left_path = res;
+    Node right_path = res;
+
+    while (hd[u] != hd[v]) {
+        if (dep[hd[u]] > dep[hd[v]]) {
+            Node cur = t.query(1,0,n-1,st[hd[u]], st[u]);
+            cur = reverse_node(cur);
+            left_path = add(left_path, cur);
+            u = par[hd[u]];
+        } else {
+            Node cur = t.query(1,0,n-1,st[hd[v]], st[v]);
+            right_path = add(cur, right_path);
+            v = par[hd[v]];
+        }
+    }
+
+    if (dep[u] > dep[v]) {
+        Node cur = t.query(1,0,n-1,st[v], st[u]);
+        cur = reverse_node(cur);
+        left_path = add(left_path, cur);
+    } else {
+        Node cur = t.query(1,0,n-1,st[u], st[v]);
+        right_path = add(cur, right_path);
+    }
+    return add(left_path, right_path);
+}*/
+void sub_upd  (int u, int x) { seg.upd  (1, 0, n-1, st[u], en[u], x); }
+int  sub_query(int u)         { return seg.query(1, 0, n-1, st[u], en[u]); }
+
+void solve() {
+    cin >> n;
+    for (int i = 1; i <= n; i++) cin >> node_val[i];
+    for (int u, v, i = 1; i < n; i++) {
+        cin >> u >> v;
+        g[u].push_back(v); g[v].push_back(u);
+    }
+    dfs(1); hd[1] = 1; dfs_hld(1);
+    for (int u = 1; u <= n; u++) dat[st[u]] = node_val[u];
+    seg.build(1, 0, n-1, dat);
+
+    T = 0;
+    for (int i = 0; i <= n; i++) g[i].clear();
+}
+int main() {
+    ios_base::sync_with_stdio(0); cin.tie(0);
+    int tc = 1; // cin >> tc;
+    while (tc--) solve();
+}

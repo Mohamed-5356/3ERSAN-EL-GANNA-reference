@@ -1,0 +1,116 @@
+#include <bits/stdc++.h>
+typedef long long ll;
+#define int long long
+#define el '\n'
+#define fio ios_base::sync_with_stdio(0); cin.tie(0); cout.tie(0);
+using namespace std;
+const int N = 100'123, F = N, mod = 1e9+7;
+int a[N];
+int prm[] = {2,3,5,7,11,13};//0-5
+int mult(int a, int b){ return 1ll * a * b % mod; }
+int fp(int b, int e){
+  int r = 1;
+  for(; e; b = mult(b, b), e >>= 1)
+    if(e&1) r = mult(r, b);
+  return r;
+}
+#define Node array<int, 6>
+Node create(int n){
+  Node x{};
+  for(int i = 0; i < 6; i++){
+    while(n > 0 && (n%prm[i]) == 0){
+      n /= prm[i];
+      x[i]++;
+    }
+    x[i]++;
+  }
+  return x;
+}
+Node add(Node a, Node b){
+  Node ret{};
+  for(int i = 0; i < 6; i++)
+     ret[i] = a[i] + b[i] - 1;
+  return ret;
+}
+vector<int> g[N];
+int tin[F], tout[F], tmr, flat[F], par[N];
+void dfs(int u = 1, int p = 0){
+  tin[u] = ++tmr;
+  flat[tmr] = a[u];
+  par[u] = p;
+  for(int v : g[u]) if(v != p) 
+    dfs(v, u);
+  tout[u] = tmr;
+}
+struct ST{
+  Node t[F << 2];
+  ST(){memset(t, 0, sizeof(t));}
+  void build(int n, int b, int e){
+    if(b == e) return void(t[n] = create(flat[b]));
+    int m = (b + e) >> 1, l = n << 1, r = l | 1;
+    build(l, b, m);
+    build(r, m + 1, e);
+    t[n] = add(t[l], t[r]);
+  }
+  void upd(int n, int b, int e, int i, Node x){
+    if(b > i || e < i) return;
+    if(b==e) return void(t[n] = x);
+    int m = (b + e) >> 1, l = n << 1, r = l|1;
+    upd(l, b, m, i, x);
+    upd(r, m + 1, e, i, x);
+    t[n] = add(t[r], t[l]);
+  }
+  Node query(int n, int b, int e, int i, int j){
+    if(e < i || b > j) return create(0);
+    if(i <= b && e <= j) return t[n];
+    int m = (b + e) >> 1, l = n << 1, r = l|1;
+    Node L = query(l, b, m, i, j);
+    Node R = query(r, m + 1, e, i, j);
+    return add(L, R);
+  }
+}t;
+void solve(){
+  int n;
+  cin >> n;
+  for(int u,v, i = 1; i < n; i++){
+    cin >> u >> v;
+    u++, v++;
+    g[u].push_back(v);
+    g[v].push_back(u);
+  }
+  for(int i = 1; i <= n; i++)
+    cin >> a[i];
+  dfs();
+  t.build(1, 1, tmr);
+  int q;
+  cin >> q;
+  string str;
+  for(int u, x; q--;){
+    cin >> str;
+    if(str == "RAND"){
+      cin >> u;
+      u++;
+      Node me = t.query(1, 1, tmr, tin[u], tout[u]);
+      ll out1{1}, out2{1};
+      for(int i = 0; i < 6; i++){
+        out1 = mult(out1, fp(prm[i], (me[i]-1)));
+        out2 = mult(out2, me[i]%mod);
+      }
+      cout << out1 << ' ' << out2 << el;
+    }
+    else{
+      cin >> u >> x;
+      u++;
+      Node me = t.query(1, 1, tmr, tin[u], tin[u]);
+      me = add(me, create(x));
+      t.upd(1, 1, tmr, tin[u], me);
+    }
+  }
+}
+signed main(){ fio int t = 1; /*cin >> t;*/ while(t--) solve(); return 0; }
+
+
+
+
+
+

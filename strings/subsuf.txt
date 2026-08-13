@@ -1,0 +1,255 @@
+// === Suffix Array (radix doubling) + Kasai LCP + RMQ ===
+// O(n log n) construction. Comfortable up to n ≈ 5e5.
+// No sentinel needed — virtual -1 padding is built into rank update.
+
+const int MAXN  = 5e5 + 10;   // raise per-problem; cnt[] must hold ≥ max(SIGMA, n)
+const int LOG   = 25;         // ceil(log2(MAXN))
+const int SIGMA = 256;        // raise if alphabet > byte
+
+int n;                        // working length
+int sa[MAXN];                 // sa[i]: start index of i-th lex suffix
+int rk[MAXN];                 // rk[i]: rank of suffix at i (= sa^{-1})
+int tmp[MAXN];                // scratch (old rank / order buffer)
+int cnt[MAXN];                // counting buckets; sized for max(SIGMA, n)
+int lcp[MAXN];                // lcp[i] = LCP(sa[i-1], sa[i]); lcp[0] = 0
+int st[LOG][MAXN];            // sparse table over lcp[]
+int lg[MAXN];                 // floor log2
+
+string s;                     // input
+
+// Does: build sa[], rk[] for s.
+// In:   s of length n ≥ 1; chars in [0, SIGMA).
+// Out:  sa[0..n-1] permutation; rk[0..n-1] inverse.
+// Time: O(n log n). Space: O(n + SIGMA).
+// Pitfalls: cast to (unsigned char) when indexing — signed chars > 127 break cnt[].
+//           Raise SIGMA for non-byte alphabets and rebuild cnt[] sizing.
+//           Sets `n = s.size()` — caller doesn't.
+void buildSA() {
+    n = (int)s.size();
+    int m = SIGMA;
+    fill(cnt, cnt + m, 0);
+    for (int i = 0; i < n; i++) cnt[rk[i] = (unsigned char)s[i]]++;
+    for (int i = 1; i < m; i++) cnt[i] += cnt[i-1];
+    for (int i = n - 1; i >= 0; i--) sa[--cnt[rk[i]]] = i;
+
+    for (int k = 1; k < n; k <<= 1) {
+        int p = 0;
+        for (int i = n - k; i < n; i++) tmp[p++] = i;
+        for (int i = 0; i < n; i++) if (sa[i] >= k) tmp[p++] = sa[i] - k;
+
+        fill(cnt, cnt + m, 0);
+        for (int i = 0; i < n; i++) cnt[rk[tmp[i]]]++;
+        for (int i = 1; i < m; i++) cnt[i] += cnt[i-1];
+        for (int i = n - 1; i >= 0; i--) sa[--cnt[rk[tmp[i]]]] = tmp[i];
+
+        for (int i = 0; i < n; i++) tmp[i] = rk[i];
+        rk[sa[0]] = 0;
+        p = 1;
+        for (int i = 1; i < n; i++) {
+            int a = sa[i], b = sa[i-1];
+            bool same = tmp[a] == tmp[b] &&
+                        (a + k < n ? tmp[a + k] : -1) == (b + k < n ? tmp[b + k] : -1);
+            rk[a] = same ? p - 1 : p++;
+        }
+        if (p == n) break;
+        m = p;
+    }
+}
+
+// Does: Kasai's LCP between consecutive SA entries.
+// In:   requires buildSA().
+// Out:  lcp[1..n-1]; lcp[0] = 0 by convention.
+// Time: O(n). Space: O(1) extra.
+// Pitfalls: lcp[0] has no meaning (no predecessor) — never query it.
+//           After this call, k may walk off the string — guarded by `i+k<n && j+k<n`.
+void buildLCP() {
+    lcp[0] = 0;
+    for (int i = 0, k = 0; i < n; i++) {
+        if (rk[i] == 0) { k = 0; continue; }
+        int j = sa[rk[i] - 1];
+        while (i + k < n && j + k < n && s[i + k] == s[j + k]) k++;
+        lcp[rk[i]] = k;
+        if (k) k--;
+    }
+}
+
+// Does: sparse table over lcp[] for O(1) range-min.
+// In:   requires buildLCP().
+// Out:  st[][], lg[] filled.
+// Time: O(n log n) build. Space: O(n log n).
+// Pitfalls: memory — LOG·MAXN ints. With LOG=20, MAXN=5e5: ~40 MB. Shrink LOG/MAXN
+//           if the judge gives ≤ 256 MB and you have other large structures.
+void buildSparse() {
+    lg[1] = 0;
+    for (int i = 2; i <= n; i++) lg[i] = lg[i/2] + 1;
+    for (int i = 0; i < n; i++) st[0][i] = lcp[i];
+    for (int j = 1; (1 << j) <= n; j++)
+        for (int i = 0; i + (1 << j) <= n; i++)
+            st[j][i] = min(st[j-1][i], st[j-1][i + (1 << (j-1))]);
+}
+
+// Does: LCP of suffixes starting at i and j in original s.
+// In:   0 ≤ i, j < n. Requires buildSparse().
+// Out:  length of longest common prefix of s[i..] and s[j..].
+// Time: O(1).
+// Pitfalls: query window is lcp[l+1 .. r] inclusive (NOT lcp[l..r]).
+//           i == j must short-circuit to n - i; otherwise you query an empty range.
+int lcpQuery(int i, int j) {
+    if (i == j) return n - i;
+    int l = rk[i], r = rk[j];
+    if (l > r) swap(l, r);
+    int len = r - l, k = lg[len];
+    return min(st[k][l + 1], st[k][r - (1 << k) + 1]);
+}
+
+// Does: count of distinct non-empty substrings of s.
+// In:   requires buildSA() and buildLCP().
+// Out:  long long.
+// Time: O(n). Space: O(1).
+// Pitfalls: int64 — n=5e5 ⇒ ~1.25e11. Don't store in int.
+//           No sentinel adjustment needed (we built without one).
+long long distinctSubstrings() {
+    long long N = n, total = N * (N + 1) / 2;
+    for (int i = 1; i < n; i++) total -= lcp[i];
+    return total;
+}
+
+// Does: longest substring occurring ≥ 2 times.
+// In:   requires buildLCP().
+// Out:  {length, start position in s}; {0, 0} if no repeat.
+// Time: O(n).
+// Pitfalls: ties broken by first SA encounter; if you need a specific occurrence
+//           or all max occurrences, iterate lcp[] yourself.
+pair<int,int> longestRepeated() {
+    int best = 0, pos = 0;
+    for (int i = 1; i < n; i++)
+        if (lcp[i] > best) { best = lcp[i]; pos = sa[i]; }
+    return {best, pos};
+}
+
+// Does: range [L, R) of SA indices whose suffix has p as a prefix.
+// In:   |p| ≥ 1. Requires buildSA().
+// Out:  {L, R}. R - L = occurrence count. sa[L..R-1] = match positions (unsorted).
+// Time: O(|p| log n). Space: O(1) extra.
+// Pitfalls: empty p returns {0, n} — every suffix has empty prefix. Guard upstream.
+//           To enumerate matches in input order, sort sa+L .. sa+R or copy and sort.
+pair<int,int> findRange(const string& p) {
+    int m = (int)p.size();
+    int lo = 0, hi = n;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (s.compare(sa[mid], m, p) < 0) lo = mid + 1; else hi = mid;
+    }
+    int L = lo;
+    lo = 0; hi = n;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (s.compare(sa[mid], m, p) <= 0) lo = mid + 1; else hi = mid;
+    }
+    return {L, lo};
+}
+
+int countOcc(const string& p) { auto [L, R] = findRange(p); return R - L; }
+vector<int> findAll(const string& p) {
+    auto [L, R] = findRange(p);
+    vector<int> v(sa + L, sa + R);
+    sort(v.begin(), v.end());
+    return v;
+}
+// Does: lex-compare s[a..a+la-1] vs s[b..b+lb-1].
+// In:   0 ≤ a, b; a+la ≤ n; b+lb ≤ n; la, lb ≥ 0. Requires buildSparse().
+// Out:  -1, 0, +1.
+// Time: O(1).
+// Pitfalls: empty substring (la or lb = 0) — caller guards if it matters.
+//           Don't pass la, lb that overflow s — no bounds check inside.
+int cmpSub(int a, int la, int b, int lb) {
+    int common = lcpQuery(a, b);
+    int mn = min(la, lb);
+    if (common >= mn) return la == lb ? 0 : (la < lb ? -1 : 1);
+    return s[a + common] < s[b + common] ? -1 : 1;
+}
+
+Suffix Array — full survey of subproblems & tricks
+Organised by family. Bracket tag at the end of each item shows status: [in template], [derive cheaply], [bolt-on], or [advanced]. Sources: cp-algorithms SA page, USACO Guide SA module, Stanford CS97SI notes, Wikipedia LCP-array applications.
+A. Pattern matching
+
+Substring existence / count of pattern p in s — findRange(p). [in template]
+All occurrence positions of p — findAll(p) above; O(|p| log n + occ log occ) if you sort. [in template]
+First / last occurrence of p in s — findRange(p) then min/max over sa[L..R); O(|p| log n + (R−L)). Alternatively persistent min/max segtree over SA for O(log) queries. [derive cheaply]
+Count occurrences of many patterns p₁…p_q in s — run findRange per pattern. If patterns share prefixes, Aho–Corasick is usually better; reach for SA when patterns vary widely or you also need positions. [derive cheaply]
+Online longest substring of T that occurs in s — concatenate s + sep + t, build SA+LCP+sparse table; for each suffix of t at SA-position r, max(lcp[r], lcp[r+1]) constrained to suffixes from s side gives the longest match starting there. Walk monotonically. [bolt-on]
+
+B. Distinct / lexicographic substring
+
+Total distinct substrings of s — n(n+1)/2 − Σlcp[i]. [in template]
+K-th lexicographically smallest distinct substring — for SA index i, suffix at sa[i] introduces (n − sa[i]) − lcp[i] new substrings (extensions of length lcp[i]+1 … n − sa[i]). Cumulative sum, binary-search the k. Substring is s.substr(sa[i], lcp[i] + offset). [bolt-on] (SPOJ SUBLEX)
+K-th substring counting multiplicities — instead of (n − sa[i]) − lcp[i], every suffix contributes n − sa[i] substrings; same binary search, no LCP subtraction. [bolt-on]
+Number of distinct substrings of length exactly L — count SA indices where (n − sa[i]) ≥ L > lcp[i]. One pass. [bolt-on]
+Number of distinct substrings ≤ given string T (lex) — for each suffix, count its prefixes that are ≤ T using cmpSub and findRange-style logic; standard variant of (7). [advanced]
+
+C. Repetition / frequency
+
+Longest substring occurring ≥ 2 times — max(lcp[i]). [in template]
+Longest substring occurring ≥ k times — over the LCP array, find the maximum value v such that there's a window of k − 1 consecutive entries with min ≥ v. Equivalent: monotonic deque, or sort answer-binary-search + sliding window. O(n log n) or O(n). [bolt-on]
+Number of substrings occurring ≥ k times — for each LCP entry, it contributes to substrings of the LCP-interval containing it; use a Cartesian tree / LCP-interval tree where each internal node has subtree size = number of occurrences. Count nodes with subtree size ≥ k, weighted by lcp[node] − lcp[parent]. [advanced]
+Sum over all distinct substrings of (occurrence count)² — same LCP-interval tree; each node contributes (lcp[node] − lcp[parent]) · subtreeSize². (CF 802I uses this.) [advanced]
+For a given substring p, count occurrences — findRange(p). [in template]
+For every substring of length L, get its occurrence count — group SA indices into maximal runs where lcp[i] ≥ L; each run is one distinct substring of length L, run-size = occurrences. [bolt-on]
+
+D. LCP / LCE / range queries
+
+LCP of two suffixes by original index — lcpQuery(i, j). [in template]
+LCE (Longest Common Extension) of strings A, B at positions i, j — concat A + '#' + B (separator unique and lex-smaller than alphabet of interest), then lcpQuery with offsets. [derive cheaply]
+Lex-compare two arbitrary substrings of s — cmpSub. [in template]
+Equality test for two substrings of s — cmpSub(a, len, b, len) == 0, or directly lcpQuery(a, b) ≥ len && a+len ≤ n && b+len ≤ n. O(1). [derive cheaply]
+Sum of LCPs over all pairs of suffixes — for each lcp[i], find the range [l, r] over which it is the minimum (monotonic stack); contribution = lcp[i] · (i − l) · (r − i + 1). Standard "sum of mins of all subarrays" recipe. [bolt-on]
+Max LCP among a chosen subset of suffixes — sort their SA indices, answer = min over consecutive adjacent gaps using sparse-table range-min. [bolt-on]
+
+E. Multi-string
+
+Longest common substring of two strings A, B — concat A + '#' + B ('#' not in either alphabet, lex-smaller). Build SA + LCP. Answer = max(lcp[i]) where sa[i−1] and sa[i] come from different sides of the '#'. [bolt-on] (SPOJ LCS)
+Longest common substring of k strings — concat with k distinct separators s₁ + ε₁ + s₂ + ε₂ + …. Sliding window over SA indices keeping count of how many distinct strings are represented; min LCP in current window is a candidate; max over valid windows. O(n log n) with monotonic deque on LCP. [bolt-on] (SPOJ LCS2)
+For each suffix of A, longest match in B — concat A + sep + B, then for each SA position belonging to A side, the answer is max(lcp[i], lcp[i+1]) restricted to neighbours from B. Walk SA once. [bolt-on]
+Generalised SA (one SA over multiple strings) — concat with separators is the cheap competition way; "true" generalised SA construction is library territory. [advanced]
+
+F. Cyclic / reversal tricks
+
+Sort cyclic shifts of s — build SA on s + s, take indices < n. The order in which they appear in SA is the sorted order of cyclic shifts. [bolt-on]
+Smallest cyclic shift / Booth's — first index < n in the SA of s + s. Booth's O(n) is shorter to type if that's all you need. [bolt-on]
+Burrows–Wheeler Transform — BWT[i] = s[(sa[i] − 1 + n) mod n] after building SA on s with a unique smallest sentinel '$' appended. Used for compression and as foundation for FM-index. [bolt-on]
+Suffixes / prefixes joint queries — build SA on s + sep + reverse(s). Lets you query "longest prefix of s that is also a suffix" type problems via LCP between the two halves. [bolt-on]
+
+G. Composite / cross-technique
+
+Suffix tree from SA + LCP — Cartesian tree of LCP array (max-heap on lcp values) is the suffix tree's internal-node structure; leaves correspond to SA entries. Used when you want bottom-up suffix-tree DP without coding the tree. [advanced]
+LCP-interval tree — same Cartesian tree viewed as set of intervals [l, r] where min lcp[l+1..r] defines the depth of that internal node. Each internal node ≡ one repeated substring class. Powers (13), (14). [advanced]
+Z-function via SA — Z[i] = lcpQuery(0, i) for i ≥ 1. Equivalent to standard Z; use this only when you already have SA built for other reasons (Z's own algorithm is O(n), this is O(n log n) to build infra). [derive cheaply]
+Failure function / KMP-like queries — usually KMP is shorter. SA gives you findRange which subsumes count-of-occurrences cleaner than KMP for many-pattern, single-text setups. [derive cheaply]
+Longest palindromic substring — Manacher is the right tool (O(n)). SA + LCP can do it (build on s + sep + reverse(s), query lcpQuery between mirrored positions for each centre), but it's O(n log n) with a fat constant. [bolt-on, but prefer Manacher]
+
+H. Advanced (skip unless the problem really demands it)
+
+Run enumeration / squares — Main–Lorentz O(n log n) with Z-function is the standard. SA+LCP variants exist but are more code. [advanced]
+Number of distinct substrings in a range s[l..r] — offline + Mo's on SA, or sweep with persistent segtree on (sa[i], lcp[i]). Hard. Comes up at ICPC regional level. [advanced]
+Dynamic SA (insert/delete characters) — Codeforces blog by tfg, O(log n) amortised but heavy. ECPC/ACPC have not historically required this. [advanced]
+SA on integer arrays with large alphabet — coord-compress to [0, n), then run buildSA with SIGMA = n. Same algorithm, just resize cnt[] and the initial bucket pass. [bolt-on]
+
+Implementation notes for the bolt-ons (≤ 3 lines each)
+
+K-th distinct substring (item 7): precompute prefix sums c[i] = Σ_{j ≤ i} ((n − sa[j]) − lcp[j]). Binary-search smallest i with c[i] ≥ k. Result is s.substr(sa[i], lcp[i] + (k − c[i−1])).
+Longest repeat ≥ k times (item 12): monotonic deque over lcp[1..n-1] with window size k − 1; track max of window minima. One pass.
+Sum of LCP over all pairs (item 21): "Sum of subarray minimums" on lcp[1..n-1]. Classic monotonic stack: for each i, find prev_smaller, next_smaller_or_equal; contribution lcp[i] * (i − prev) * (next − i).
+LCS of 2 strings (item 23): build SA on A + '#' + B. Walk LCP array; whenever sa[i-1] < |A| and sa[i] > |A| (or vice versa), lcp[i] is a candidate.
+LCS of k strings (item 24): like (23), but maintain a sliding window over SA positions s.t. the window covers all k source strings; min LCP in window (monotonic deque) is a candidate; max over all valid windows.
+Cyclic shifts (item 27): build SA on t = s + s. Iterate SA; first n entries with sa[i] < n give sorted rotations.
+BWT (item 29): append unique '$' < min(s). After buildSA, BWT = "" ; for i in [0, n+1): BWT += sa[i] == 0 ? '$' : s[sa[i] - 1].
+
+Triggers — when to reach for SA
+
+"Distinct substrings", "k-th substring lex", "longest repeated substring" → SA + LCP.
+"LCP of arbitrary suffixes" or "compare arbitrary substrings in O(1)" → SA + LCP + sparse table.
+"Longest common substring of k strings" → concatenation + SA + LCP sliding window.
+Pattern matching where the text is fixed and patterns stream in → SA + findRange. (Streaming patterns over fixed text is exactly SA's strength; reversed, KMP/Z wins.)
+Sum / count over all substrings classified by frequency → LCP-interval tree on SA.
+
+If you instead see fixed-pattern, single-text matching with online text → KMP/Z. Multi-pattern, single-text → Aho–Corasick. Don't reach for SA there; it's a heavier hammer.
